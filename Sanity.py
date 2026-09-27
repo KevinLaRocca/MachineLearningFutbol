@@ -3,8 +3,6 @@ import numpy as np
 
 url_actual = "https://www.football-data.co.uk/mmz4281/2627/E0.csv"
 df_actual = pd.read_csv(url_actual)
-pd.set_option('display.max_columns', None)
-pd.set_option('display.width', 1000)
 
 column_mapping = {
     'Date': 'MatchDate',
@@ -26,17 +24,17 @@ df_actual['MatchDate'] = pd.to_datetime(df_actual['MatchDate'], format='%d/%m/%Y
 df_actual = df_actual.dropna(subset=['FullTimeResult']).copy()
 
 df_historico = pd.read_csv("epl_final.csv")
-df_historico['MatchDate'] = pd.to_datetime(df_historico['MatchDate'], format='%Y-%m-%d')
+df_historico['MatchDate'] = pd.to_datetime(df_historico['MatchDate'], format='%Y-%m-%d', errors='coerce')
 
 df = pd.concat([df_historico, df_actual], ignore_index=True)
-df = df.sort_values('MatchDate').reset_index(drop=True)
+df = df.dropna(subset=['MatchDate']).sort_values('MatchDate').reset_index(drop=True)
 df = df.drop_duplicates(subset=['MatchDate', 'HomeTeam', 'AwayTeam'], keep='last')
 
 target_map = {'H': 0, 'D': 1, 'A': 2}
 df['target'] = df['FullTimeResult'].map(target_map)
 
 print(f"Total de partidos cargados: {len(df)}")
-print(f"Distribución del target:\n{df['FullTimeResult'].value_counts(normalize=True)}")
+
 
 def calculate_features(df, window=5):
     home_df = df[['MatchDate', 'HomeTeam', 'FullTimeHomeGoals', 'FullTimeAwayGoals', 
@@ -54,8 +52,12 @@ def calculate_features(df, window=5):
     cols_a_promediar = ['GF', 'GA', 'TF', 'TA', 'TAF', 'TAA']
     
     for col in cols_a_promediar:
-        team_stats[f'prom_{col}_general'] = team_stats.groupby('Equipo')[col].transform(lambda x: x.rolling(window, min_periods=1).mean())
-        team_stats[f'prom_{col}_condicion'] = team_stats.groupby(['Equipo', 'es_local'])[col].transform(lambda x: x.shift(0).rolling(window, min_periods=1).mean())
+        team_stats[f'prom_{col}_general'] = team_stats.groupby('Equipo')[col].transform(
+            lambda x: x.shift(1).rolling(window, min_periods=1).mean()
+        )
+        team_stats[f'prom_{col}_condicion'] = team_stats.groupby(['Equipo', 'es_local'])[col].transform(
+            lambda x: x.shift(1).rolling(window, min_periods=1).mean()
+        )
 
     team_stats['precision_tiro_general'] = team_stats['prom_TAF_general'] / (team_stats['prom_TF_general'] + 1e-5)
 
@@ -115,5 +117,4 @@ columnas_verificacion = [
     'local_prom_tiros_arco_favor_general', 'visitante_prom_tiros_arco_favor_general',
     'target'
 ]
-
 df_features[columnas_verificacion].tail(10).to_html('vista_partidos.html')
